@@ -10,6 +10,7 @@ pub mod dap;
 pub mod diagnostics;
 pub mod lsp;
 pub mod word_index;
+pub mod wakatime;
 
 #[derive(Debug)]
 pub enum AutoSaveEvent {
@@ -26,6 +27,7 @@ pub struct Handlers {
     pub word_index: word_index::Handler,
     pub pull_diagnostics: Sender<lsp::PullDiagnosticsEvent>,
     pub pull_all_documents_diagnostics: Sender<lsp::PullAllDocumentsDiagnosticsEvent>,
+    pub wakatime: Option<wakatime::Handler>,
 }
 
 impl Handlers {
@@ -59,4 +61,5 @@ impl Handlers {
 pub fn register_hooks(handlers: &Handlers) {
     lsp::register_hooks(handlers);
     word_index::register_hooks(handlers);
+    wakatime::register_hooks(handlers);
 }

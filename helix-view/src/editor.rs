@@ -427,6 +427,9 @@ pub struct Config {
     pub rainbow_brackets: bool,
     /// Whether to enable Kitty Keyboard Protocol
     pub kitty_keyboard_protocol: KittyKeyboardProtocolConfig,
+    /// WakaTime configuration
+    #[serde(default)]
+    pub wakatime: WakaTimeConfig,
 }
 
 #[derive(Debug, Default, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize, Clone, Copy)]
@@ -436,6 +439,39 @@ pub enum KittyKeyboardProtocolConfig {
     Auto,
     Disabled,
     Enabled,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case", default, deny_unknown_fields)]
+pub struct WakaTimeConfig {
+    /// Whether WakaTime tracking is enabled. Defaults to false.
+    pub enabled: bool,
+    /// WakaTime API key for authentication
+    pub api_key: Option<String>,
+    /// Custom WakaTime API URL. Defaults to the official API.
+    pub api_url: String,
+    /// Project name override
+    pub project: Option<String>,
+    /// Whether to hide file names from WakaTime. Defaults to false.
+    pub hide_file_names: bool,
+    /// Whether to hide project names from WakaTime. Defaults to false.
+    pub hide_project_names: bool,
+    /// Timeout for WakaTime API requests in seconds. Defaults to 30.
+    pub timeout: u64,
+}
+
+impl Default for WakaTimeConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            api_key: None,
+            api_url: "https://api.wakatime.com/api/v1/users/current/heartbeats".to_string(),
+            project: None,
+            hide_file_names: false,
+            hide_project_names: false,
+            timeout: 30,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize, Eq, PartialOrd, Ord)]
@@ -1118,6 +1154,7 @@ impl Default for Config {
             editor_config: true,
             rainbow_brackets: false,
             kitty_keyboard_protocol: Default::default(),
+            wakatime: WakaTimeConfig::default(),
         }
     }
 }
