@@ -112,6 +112,7 @@ impl Handler {
 
     /// Update the WakaTime configuration
     pub fn update_config(&self, wakatime_config: crate::editor::WakaTimeConfig) {
+        log::debug!("Updating WakaTime config: enabled={}", wakatime_config.enabled);
         *self.config.write() = Some(wakatime_config);
     }
 
@@ -262,6 +263,7 @@ fn send_document_heartbeat_simple(
     lineno: Option<u32>,
     cursorpos: Option<u32>,
 ) {
+    log::debug!("WakaTime: Sending heartbeat for entity: {}", entity);
     let event = WakaTimeEvent::Heartbeat {
         entity,
         type_: WakaTimeEntityType::File,
@@ -337,14 +339,18 @@ fn send_document_heartbeat(
 
 /// Register WakaTime event hooks
 pub(crate) fn register_hooks(handlers: &Handlers) {
+    log::debug!("Attempting to register WakaTime hooks");
     let Some(wakatime_handler) = handlers.wakatime.as_ref() else {
+        log::debug!("WakaTime handler not available, skipping hook registration");
         return;
     };
 
+    log::debug!("WakaTime handler found, registering hooks");
     let sender = wakatime_handler.sender.clone();
     
     // Hook for document opens - this is the simplest case as it has all the context we need
     register_hook!(move |event: &mut DocumentDidOpen<'_>| {
+        log::debug!("WakaTime: Document opened");
         let doc = event.editor.documents.get(&event.doc).unwrap();
         // Use the focused view or get any view from the document
         let view_id = event.editor.tree.focus;

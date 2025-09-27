@@ -33,11 +33,11 @@ pub fn setup(config: Arc<ArcSwap<Config>>) -> Handlers {
     let pull_diagnostics = PullDiagnosticsHandler::default().spawn();
     let pull_all_documents_diagnostics = PullAllDocumentsDiagnosticHandler::default().spawn();
     
-    // Create WakaTime handler if enabled in config
-    let wakatime = if config.load().editor.wakatime.enabled {
-        Some(helix_view::handlers::wakatime::Handler::new())
-    } else {
-        None
+    // Create WakaTime handler and update its config
+    let wakatime = {
+        let handler = helix_view::handlers::wakatime::Handler::new();
+        handler.update_config(config.load().editor.wakatime.clone());
+        Some(handler)
     };
 
     let handlers = Handlers {

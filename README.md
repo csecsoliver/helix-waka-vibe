@@ -36,6 +36,7 @@ All shortcuts/keymaps can be found [in the documentation on the website](https:/
 - Multiple selections
 - Built-in language server support
 - Smart, incremental syntax highlighting and code editing via tree-sitter
+- WakaTime integration for time tracking
 
 Although it's primarily a terminal-based editor, I am interested in exploring
 a custom renderer (similar to Emacs) using wgpu or skulpin.
