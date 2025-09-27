@@ -11,7 +11,7 @@ repository.workspace = true
 homepage.workspace = true
 
 [features]
-default = []
+default = ["wakatime"]
 term = ["termina", "crossterm"]
 unicode-lines = []
 wakatime = ["reqwest"]

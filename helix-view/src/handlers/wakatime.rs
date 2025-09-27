@@ -1,5 +1,5 @@
 use crate::document::Document;
-use crate::events::DocumentDidOpen;
+use crate::events::{DocumentDidChange, DocumentDidOpen, SelectionDidChange};
 use crate::handlers::Handlers;
 use crate::ViewId;
 use helix_event::register_hook;
@@ -252,10 +252,39 @@ fn get_project_name(path: &PathBuf) -> Option<String> {
 }
 
 /// Send a heartbeat for document activity
+fn send_document_heartbeat_simple(
+    sender: &UnboundedSender<WakaTimeEvent>,
+    entity: String,
+    language: Option<String>,
+    project: Option<String>,
+    is_write: bool,
+    lines: Option<u32>,
+    lineno: Option<u32>,
+    cursorpos: Option<u32>,
+) {
+    let event = WakaTimeEvent::Heartbeat {
+        entity,
+        type_: WakaTimeEntityType::File,
+        category: WakaTimeCategory::Coding,
+        time: current_timestamp(),
+        project,
+        language,
+        is_write,
+        lines,
+        lineno,
+        cursorpos,
+    };
+
+    if let Err(e) = sender.send(event) {
+        log::warn!("Failed to send WakaTime heartbeat: {}", e);
+    }
+}
+
+/// Send a heartbeat for document activity
 fn send_document_heartbeat(
     sender: &UnboundedSender<WakaTimeEvent>,
     doc: &Document,
-    view_id: crate::ViewId,
+    view_id: ViewId,
     is_write: bool,
     wakatime_config: &crate::editor::WakaTimeConfig,
 ) {
@@ -267,43 +296,43 @@ fn send_document_heartbeat(
         return;
     };
 
-    let entity = path.to_string_lossy().to_string();
+    let entity = if wakatime_config.hide_file_names {
+        "HIDDEN".to_string()
+    } else {
+        path.to_string_lossy().to_string()
+    };
+    
     let language = get_language_name(doc);
-    let project = wakatime_config
-        .project
-        .clone()
-        .or_else(|| get_project_name(path));
-
-    let lines = doc.text().len_lines() as u32;
-    // For now, we'll use the primary selection from the document's selections
-    let selection = doc.selection(view_id);
-    let cursor_pos = selection.primary().cursor(doc.text().slice(..));
-    let line_idx = doc.text().char_to_line(cursor_pos);
-
-    let event = WakaTimeEvent::Heartbeat {
-        entity: if wakatime_config.hide_file_names {
-            "HIDDEN".to_string()
-        } else {
-            entity
-        },
-        type_: WakaTimeEntityType::File,
-        category: WakaTimeCategory::Coding,
-        time: current_timestamp(),
-        project: if wakatime_config.hide_project_names {
-            None
-        } else {
-            project
-        },
-        language,
-        is_write,
-        lines: Some(lines),
-        lineno: Some(line_idx as u32 + 1), // 1-indexed
-        cursorpos: Some(cursor_pos as u32),
+    let project = if wakatime_config.hide_project_names {
+        None
+    } else {
+        wakatime_config
+            .project
+            .clone()
+            .or_else(|| get_project_name(path))
     };
 
-    if let Err(e) = sender.send(event) {
-        log::warn!("Failed to send WakaTime heartbeat: {}", e);
-    }
+    let lines = doc.text().len_lines() as u32;
+    
+    // Try to get cursor position, but handle the case where the view doesn't exist
+    let (lineno, cursorpos) = if let Some(selection) = doc.selections().get(&view_id) {
+        let cursor_pos = selection.primary().cursor(doc.text().slice(..));
+        let line_idx = doc.text().char_to_line(cursor_pos);
+        (Some(line_idx as u32 + 1), Some(cursor_pos as u32))
+    } else {
+        (None, None)
+    };
+
+    send_document_heartbeat_simple(
+        sender,
+        entity,
+        language,
+        project,
+        is_write,
+        Some(lines),
+        lineno,
+        cursorpos,
+    );
 }
 
 /// Register WakaTime event hooks
@@ -320,6 +349,67 @@ pub(crate) fn register_hooks(handlers: &Handlers) {
         // Use the focused view or get any view from the document
         let view_id = event.editor.tree.focus;
         send_document_heartbeat(&sender, doc, view_id, false, &event.editor.config().wakatime);
+        Ok(())
+    });
+
+    let sender2 = wakatime_handler.sender.clone();
+    
+    // Hook for document changes (typing)
+    register_hook!(move |event: &mut DocumentDidChange<'_>| {
+        if event.ghost_transaction {
+            return Ok(());
+        }
+        
+        // For document changes, we have limited context but can still track basic info
+        if let Some(path) = event.doc.path() {
+            let entity = path.to_string_lossy().to_string();
+            let language = get_language_name(event.doc);
+            let project = get_project_name(path);
+            let lines = event.doc.text().len_lines() as u32;
+            
+            // For changes, we can't easily get cursor position without view context
+            // so we'll send a simpler heartbeat
+            send_document_heartbeat_simple(
+                &sender2,
+                entity,
+                language,
+                project,
+                true, // is_write = true for document changes
+                Some(lines),
+                None, // lineno
+                None, // cursorpos
+            );
+        }
+        Ok(())
+    });
+
+    let sender3 = wakatime_handler.sender.clone();
+    
+    // Hook for selection changes (cursor movement)
+    register_hook!(move |event: &mut SelectionDidChange<'_>| {
+        if let Some(path) = event.doc.path() {
+            let entity = path.to_string_lossy().to_string();
+            let language = get_language_name(event.doc);
+            let project = get_project_name(path);
+            let lines = event.doc.text().len_lines() as u32;
+            
+            // For selection changes, we have access to the view and can get the selection safely
+            if let Some(selection) = event.doc.selections().get(&event.view) {
+                let cursor_pos = selection.primary().cursor(event.doc.text().slice(..));
+                let line_idx = event.doc.text().char_to_line(cursor_pos);
+                
+                send_document_heartbeat_simple(
+                    &sender3,
+                    entity,
+                    language,
+                    project,
+                    false, // is_write = false for cursor movement
+                    Some(lines),
+                    Some(line_idx as u32 + 1), // 1-indexed
+                    Some(cursor_pos as u32),
+                );
+            }
+        }
         Ok(())
     });
 }
